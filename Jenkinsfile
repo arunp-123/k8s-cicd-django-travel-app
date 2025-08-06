@@ -6,7 +6,7 @@ pipeline {
         DOCKER_IMAGE = "arun1278/django-backend"
         DOCKER_TAG = "v1"
         KUBECONFIG_CRED = "kubeconfig-jenkins"
-        GIT_CRED = "git-credentials"
+        GIT_CRED = "git"
     }
 
     stages {
