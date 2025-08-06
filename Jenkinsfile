@@ -15,7 +15,7 @@ pipeline {
             steps {
                 git branch: 'master',
                     credentialsId: "${GIT_CRED}",
-                    url: 'https://github.com/arunp-123/django-travel-application.git'
+                    url: 'https://github.com/arunp-123/k8s-cicd-django-travel-app.git'
             }
         }
 
@@ -31,7 +31,7 @@ pipeline {
                         # Run Kaniko to build & push image
                         kubectl run kaniko --rm -i --restart=Never --image=gcr.io/kaniko-project/executor:latest --namespace=jenkins -- \
                           --dockerfile=Dockerfile \
-                          --context=git://github.com/arunp-123/django-travel-application.git \
+                          --context=git://github.com/arunp-123/k8s-cicd-django-travel-app.git \
                           --destination=docker.io/arun1278/django-backend:v1
                         '''
                     }
