@@ -1,8 +1,8 @@
 pipeline {
     agent {
         docker {
-            image 'python:3.10'         // Base image with Python pre-installed
-            args '-u root:root'        // Run as root to install extra tools
+            image 'docker:24.0.7-dind'  // Docker-in-Docker image
+            args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
         }
     }
 
@@ -19,7 +19,7 @@ pipeline {
         stage('Setup Tools') {
             steps {
                 sh '''
-                    apt-get update && apt-get install -y docker.io curl
+                    apk add --no-cache python3 py3-pip curl bash git
                     curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
                     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
                     
@@ -62,18 +62,6 @@ pipeline {
             }
         }
 
-        stage('Verify Kubernetes Connectivity') {
-            steps {
-                withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
-                    sh '''
-                        export KUBECONFIG=$KUBECONFIG_FILE
-                        kubectl cluster-info
-                        kubectl get nodes -o wide
-                    '''
-                }
-            }
-        }
-
         stage('Deploy to Kubernetes') {
             steps {
                 withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
@@ -86,24 +74,16 @@ pipeline {
                 }
             }
         }
-
-        stage('Verify Deployment') {
-            steps {
-                withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
-                    sh '''
-                        export KUBECONFIG=$KUBECONFIG_FILE
-                        kubectl get pods -n jenkins -o wide
-                        kubectl get svc -n jenkins
-                        kubectl wait --for=condition=ready pod -l app=django-application -n jenkins --timeout=300s
-                    '''
-                }
-            }
-        }
     }
 
     post {
+        always {
+            script {
+                echo '🧹 Cleaning up Docker...'
+                sh 'docker system prune -f || true'
+            }
+        }
         success { echo '🎉 Pipeline completed successfully!' }
         failure { echo '❌ Pipeline failed!' }
-        always { sh 'docker system prune -f || true' }
     }
 }
