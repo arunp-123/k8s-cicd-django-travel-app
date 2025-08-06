@@ -6,7 +6,7 @@ pipeline {
         DOCKER_IMAGE = "arun1278/django-backend"
         DOCKER_TAG = "v1"
         KUBECONFIG_CRED = "kubeconfig-jenkins"
-        GIT_CRED = "git"             
+        GIT_CRED = "git"
         DOCKERHUB_CRED = "dockerhub-cred"
     }
 
@@ -15,24 +15,33 @@ pipeline {
             steps {
                 git branch: 'master',
                     credentialsId: "${GIT_CRED}",
-                    url: 'https://github.com/arunp-123/k8s-cicd-django-travel-app.git'
+                    url: 'https://github.com/arunp-123/django-travel-application.git'
             }
         }
 
         stage('Build & Push Image with Kaniko') {
             steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
                         sh '''
-                        # Create Docker config.json for Kaniko
-                        mkdir -p /kaniko/.docker
-                        echo "{\"auths\":{\"https://index.docker.io/v1/\":{\"username\":\"$DOCKER_USER\",\"password\":\"$DOCKER_PASS\"}}}" > /kaniko/.docker/config.json
+                            set -e
+                            export KUBECONFIG=$KUBECONFIG_FILE
 
-                        # Run Kaniko to build & push image
-                        kubectl run kaniko --rm -i --restart=Never --image=gcr.io/kaniko-project/executor:latest --namespace=jenkins -- \
-                          --dockerfile=Dockerfile \
-                          --context=git://github.com/arunp-123/k8s-cicd-django-travel-app.git \
-                          --destination=docker.io/arun1278/django-backend:v1
+                            # Create DockerHub secret for Kaniko
+                            kubectl delete secret regcred --ignore-not-found -n jenkins
+                            kubectl create secret docker-registry regcred \
+                              --docker-server=https://index.docker.io/v1/ \
+                              --docker-username=$DOCKER_USER \
+                              --docker-password=$DOCKER_PASS \
+                              -n jenkins
+
+                            echo "🚀 Starting Kaniko build pod in Kubernetes..."
+                            kubectl run kaniko-build --rm -i --restart=Never -n jenkins \
+                              --image=gcr.io/kaniko-project/executor:latest -- \
+                              --context=git://github.com/arunp-123/django-travel-application.git \
+                              --dockerfile=Dockerfile \
+                              --destination=docker.io/$DOCKER_IMAGE:$DOCKER_TAG \
+                              --verbosity=debug
                         '''
                     }
                 }
