@@ -1,25 +1,5 @@
 pipeline {
-    agent {
-        kubernetes {
-            yaml """
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccountName: jenkins
-  containers:
-    - name: kubectl
-      image: bitnami/kubectl:latest
-      command:
-        - cat
-      tty: true
-    - name: kaniko
-      image: gcr.io/kaniko-project/executor:latest
-      command:
-        - cat
-      tty: true
-"""
-        }
-    }
+    agent any
 
     environment {
         REGISTRY = "docker.io"
@@ -41,47 +21,39 @@ spec:
 
         stage('Build & Push Image with Kaniko') {
             steps {
-                container('kubectl') {
-                    withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
-                            sh '''
-                                set -e
-                                export KUBECONFIG=$KUBECONFIG_FILE
+                withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
+                        sh '''
+                            set -e
+                            export KUBECONFIG=$KUBECONFIG_FILE
 
-                                # Create DockerHub secret for Kaniko
-                                kubectl delete secret regcred --ignore-not-found -n jenkins
-                                kubectl create secret docker-registry regcred \
-                                  --docker-server=https://index.docker.io/v1/ \
-                                  --docker-username=$DOCKER_USER \
-                                  --docker-password=$DOCKER_PASS \
-                                  -n jenkins
-                            '''
-                        }
+                            echo "🔑 Creating DockerHub secret..."
+                            kubectl delete secret regcred --ignore-not-found -n jenkins
+                            kubectl create secret docker-registry regcred \
+                              --docker-server=https://index.docker.io/v1/ \
+                              --docker-username=$DOCKER_USER \
+                              --docker-password=$DOCKER_PASS \
+                              -n jenkins
+
+                            echo "🚀 Running Kaniko build pod..."
+                            kubectl apply -f k8s/kaniko-job.yaml -n jenkins
+
+                            echo "⏳ Waiting for Kaniko build to finish..."
+                            kubectl wait --for=condition=complete job/kaniko-build -n jenkins --timeout=300s
+                        '''
                     }
-                }
-
-                container('kaniko') {
-                    sh '''
-                        /kaniko/executor \
-                          --context=git://github.com/arunp-123/django-travel-application.git \
-                          --dockerfile=Dockerfile \
-                          --destination=docker.io/$DOCKER_IMAGE:$DOCKER_TAG \
-                          --verbosity=debug
-                    '''
                 }
             }
         }
 
         stage('Deploy to Kubernetes') {
             steps {
-                container('kubectl') {
-                    withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
-                        sh '''
-                            export KUBECONFIG=$KUBECONFIG_FILE
-                            kubectl apply -f k8s/django-travel-application.yml -n jenkins
-                            kubectl rollout status deployment/django-application -n jenkins
-                        '''
-                    }
+                withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
+                    sh '''
+                        export KUBECONFIG=$KUBECONFIG_FILE
+                        kubectl apply -f k8s/django-travel-application.yml -n jenkins
+                        kubectl rollout status deployment/django-application -n jenkins
+                    '''
                 }
             }
         }
