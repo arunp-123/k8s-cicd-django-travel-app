@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+
+{% block main %}
+<h1>This is about page</h1>
+{% for c in category %}
+<h3>{{ c.cat_name }}</h3>
+<h4>{{ c.cat_spec }}</h4>
+{% endfor %}
+
+{% endblock main %}
