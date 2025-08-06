@@ -1,7 +1,7 @@
 pipeline {
     agent {
         docker {
-            image 'docker:24.0.7-cli'  
+            image 'docker:24.0.7-dind'  // Docker-in-Docker image
             args '--privileged -v /var/run/docker.sock:/var/run/docker.sock'
         }
     }
@@ -22,9 +22,9 @@ pipeline {
                     apk add --no-cache python3 py3-pip curl bash git
                     curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
                     install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-
-                    docker --version
+                    
                     python3 --version
+                    docker --version
                     kubectl version --client
                 '''
             }
@@ -78,7 +78,7 @@ pipeline {
 
     post {
         always {
-            node {
+            script {
                 echo '🧹 Cleaning up Docker...'
                 sh 'docker system prune -f || true'
             }
