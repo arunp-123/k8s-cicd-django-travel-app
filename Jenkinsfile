@@ -6,7 +6,8 @@ pipeline {
         DOCKER_IMAGE = "arun1278/django-backend"
         DOCKER_TAG = "v1"
         KUBECONFIG_CRED = "kubeconfig-jenkins"
-        GIT_CRED = "git"
+        GIT_CRED = "git"              // ✅ Correct Git credential ID
+        DOCKERHUB_CRED = "dockerhub-cred"
     }
 
     stages {
@@ -18,23 +19,22 @@ pipeline {
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build & Push Image with Kaniko') {
             steps {
                 script {
-                    sh """
-                        docker build -t $DOCKER_IMAGE:$DOCKER_TAG .
-                    """
-                }
-            }
-        }
+                    withCredentials([usernamePassword(credentialsId: "${DOCKERHUB_CRED}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                        sh '''
+                        # Create Docker config.json for Kaniko
+                        mkdir -p /kaniko/.docker
+                        echo "{\"auths\":{\"https://index.docker.io/v1/\":{\"username\":\"$DOCKER_USER\",\"password\":\"$DOCKER_PASS\"}}}" > /kaniko/.docker/config.json
 
-        stage('Push to DockerHub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-cred', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh """
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push $DOCKER_IMAGE:$DOCKER_TAG
-                    """
+                        # Run Kaniko to build & push image
+                        kubectl run kaniko --rm -i --restart=Never --image=gcr.io/kaniko-project/executor:latest --namespace=jenkins -- \
+                          --dockerfile=Dockerfile \
+                          --context=git://github.com/arunp-123/django-travel-application.git \
+                          --destination=docker.io/arun1278/django-backend:v1
+                        '''
+                    }
                 }
             }
         }
@@ -44,12 +44,7 @@ pipeline {
                 withCredentials([file(credentialsId: "${KUBECONFIG_CRED}", variable: 'KUBECONFIG_FILE')]) {
                     sh '''
                         export KUBECONFIG=$KUBECONFIG_FILE
-
-                        # Apply Deployment & Service
-                        kubectl apply -f k8s/deployment.yaml
-                        kubectl apply -f k8s/service.yaml
-
-                        # Verify rollout
+                        kubectl apply -f k8s/django-travel-application.yml -n jenkins
                         kubectl rollout status deployment/django-application -n jenkins
                     '''
                 }
@@ -57,7 +52,3 @@ pipeline {
         }
     }
 }
-
-
-
-
